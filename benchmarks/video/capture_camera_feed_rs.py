@@ -20,6 +20,8 @@ import datetime as dt
 from pathlib import Path
 
 import cv2
+import pyrealsense2 as rs
+import numpy as np
 
 
 def display_and_save_video_stream(output_dir: Path, fps: int, width: int, height: int):
@@ -28,35 +30,52 @@ def display_and_save_video_stream(output_dir: Path, fps: int, width: int, height
     if not capture_dir.exists():
         capture_dir.mkdir(parents=True, exist_ok=True)
 
-    # Opens the default webcam
-    cap = cv2.VideoCapture(1)
-    if not cap.isOpened():
-        print("Error: Could not open video stream.")
-        return
+    # 初始化RealSense相机
+    pipeline = rs.pipeline()
+    config = rs.config()
+    config.enable_stream(rs.stream.color, width, height, rs.format.bgr8, fps)
+    config.enable_stream(rs.stream.depth, width, height, rs.format.z16, fps)
+    try:
+        pipeline.start(config)
+        
+        frame_index = 0
+        while True:
+            # 等待一组帧（彩色）
+            frames = pipeline.wait_for_frames()
+            color_frame = frames.get_color_frame()
+            # 获取深度图
+            
+            depth_frame = frames.get_depth_frame()
+            
+            if depth_frame:
+                # 转换深度图为可视化格式
+                depth_image = np.asanyarray(depth_frame.get_data())
+     
+                depth_colormap = cv2.applyColorMap(cv2.convertScaleAbs(depth_image, alpha=0.03), cv2.COLORMAP_JET)
+                
+                # 显示深度图
+                cv2.imshow("Depth Stream", depth_colormap)
+                cv2.imwrite(str(capture_dir / f"depth_{frame_index:06d}.png"), depth_colormap)
+            
+            if color_frame:
+           
+                # 转换为numpy数组
+                frame = np.asanyarray(color_frame.get_data())
+                
+                cv2.imshow("Video Stream", frame)
+                cv2.imwrite(str(capture_dir / f"frame_{frame_index:06d}.png"), frame)
+            
+            frame_index += 1
 
-    cap.set(cv2.CAP_PROP_FPS, fps)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+           
+            
+            if cv2.waitKey(1) & 0xFF == ord("q"):
+                break
 
-    frame_index = 0
-    while True:
-        ret, frame = cap.read()
-
-        if not ret:
-            print("Error: Could not read frame.")
-            break
-
-        cv2.imshow("Video Stream", frame)
-        cv2.imwrite(str(capture_dir / f"frame_{frame_index:06d}.png"), frame)
-        frame_index += 1
-
-        # Break the loop on 'q' key press
-        if cv2.waitKey(1) & 0xFF == ord("q"):
-            break
-
-    # Release the capture and destroy all windows
-    cap.release()
-    cv2.destroyAllWindows()
+    finally:
+        # 停止相机流
+        pipeline.stop()
+        cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":

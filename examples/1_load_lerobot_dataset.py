@@ -12,6 +12,7 @@ Features included in this script:
 The script ends with examples of how to batch process data using PyTorch's DataLoader.
 """
 
+import os
 from pprint import pprint
 
 import torch
@@ -19,13 +20,13 @@ from huggingface_hub import HfApi
 
 import lerobot
 from lerobot.common.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetadata
-
+os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 # We ported a number of existing datasets ourselves, use this to see the list:
 print("List of available datasets:")
 pprint(lerobot.available_datasets)
 
 # You can also browse through the datasets created/ported by the community on the hub using the hub api:
-hub_api = HfApi()
+hub_api = HfApi(endpoint= "https://hf-mirror.com")
 repo_ids = [info.id for info in hub_api.list_datasets(task_categories="robotics", tags=["LeRobot"])]
 pprint(repo_ids)
 
