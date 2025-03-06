@@ -1,3 +1,17 @@
+# Copyright 2024 The HuggingFace Inc. team. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 ########################################################################################
 # Utilities
 ########################################################################################
@@ -12,18 +26,15 @@ from functools import cache
 
 # import cv2
 import torch
-import tqdm
 from deepdiff import DeepDiff
 from termcolor import colored
 
 from lerobot.common.datasets.image_writer import safe_stop_image_writer
 from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.common.datasets.utils import get_features_from_robot
-from lerobot.common.policies.factory import make_policy
 from lerobot.common.robot_devices.robots.utils import Robot
 from lerobot.common.robot_devices.utils import busy_wait
-from lerobot.common.utils.utils import get_safe_torch_device, init_hydra_config, set_global_seed
-from lerobot.scripts.eval import get_pretrained_policy_path
+from lerobot.common.utils.utils import get_safe_torch_device, has_method
 
 
 def log_control_info(robot: Robot, dt_s, episode_index=None, frame_index=None, fps=None):
@@ -35,7 +46,7 @@ def log_control_info(robot: Robot, dt_s, episode_index=None, frame_index=None, f
 
     def log_dt(shortname, dt_val_s):
         nonlocal log_items, fps
-        info_str = f"{shortname}:{dt_val_s * 1000:5.2f} ({1/ dt_val_s:3.1f}hz)"
+        info_str = f"{shortname}:{dt_val_s * 1000:5.2f} ({1 / dt_val_s:3.1f}hz)"
         if fps is not None:
             actual_fps = 1 / dt_val_s
             if actual_fps < fps - 1:
@@ -87,10 +98,6 @@ def is_headless():
         traceback.print_exc()
         print()
         return True
-
-
-def has_method(_object: object, method_name: str):
-    return hasattr(_object, method_name) and callable(getattr(_object, method_name))
 
 
 def predict_action(observation, policy, device, use_amp):
@@ -161,30 +168,10 @@ def init_keyboard_listener():
     return listener, events
 
 
-def init_policy(pretrained_policy_name_or_path, policy_overrides):
-    """Instantiate the policy and load fps, device and use_amp from config yaml"""
-    pretrained_policy_path = get_pretrained_policy_path(pretrained_policy_name_or_path)
-    hydra_cfg = init_hydra_config(pretrained_policy_path / "config.yaml", policy_overrides)
-    policy = make_policy(hydra_cfg=hydra_cfg, pretrained_policy_name_or_path=pretrained_policy_path)
-
-    # Check device is available
-    device = get_safe_torch_device(hydra_cfg.device, log=True)
-    use_amp = hydra_cfg.use_amp
-    policy_fps = hydra_cfg.env.fps
-
-    policy.eval()
-    policy.to(device)
-
-    torch.backends.cudnn.benchmark = True
-    torch.backends.cuda.matmul.allow_tf32 = True
-    set_global_seed(hydra_cfg.seed)
-    return policy, policy_fps, device, use_amp
-
-
 def warmup_record(
     robot,
     events,
-    enable_teloperation,
+    enable_teleoperation,
     warmup_time_s,
     display_cameras,
     fps,
@@ -195,7 +182,7 @@ def warmup_record(
         display_cameras=display_cameras,
         events=events,
         fps=fps,
-        teleoperate=enable_teloperation,
+        teleoperate=enable_teleoperation,
     )
 
 
@@ -209,6 +196,7 @@ def record_episode(
     device,
     use_amp,
     fps,
+    single_task,
 ):
     control_loop(
         robot=robot,
@@ -221,6 +209,7 @@ def record_episode(
         use_amp=use_amp,
         fps=fps,
         teleoperate=policy is None,
+        single_task=single_task,
     )
 
 
@@ -233,9 +222,10 @@ def control_loop(
     dataset: LeRobotDataset | None = None,
     events=None,
     policy=None,
-    device=None,
-    use_amp=None,
-    fps=None,
+    device: torch.device | str | None = None,
+    use_amp: bool | None = None,
+    fps: int | None = None,
+    single_task: str | None = None,
 ):
     # TODO(rcadene): Add option to record logs
     if not robot.is_connected:
@@ -250,8 +240,14 @@ def control_loop(
     if teleoperate and policy is not None:
         raise ValueError("When `teleoperate` is True, `policy` should be None.")
 
+    if dataset is not None and single_task is None:
+        raise ValueError("You need to provide a task as argument in `single_task`.")
+
     if dataset is not None and fps is not None and dataset.fps != fps:
         raise ValueError(f"The dataset fps should be equal to requested fps ({dataset['fps']} != {fps}).")
+
+    if isinstance(device, str):
+        device = get_safe_torch_device(device)
 
     timestamp = 0
     start_episode_t = time.perf_counter()
@@ -271,7 +267,7 @@ def control_loop(
                 action = {"action": action}
 
         if dataset is not None:
-            frame = {**observation, **action}
+            frame = {**observation, **action, "task": single_task}
             dataset.add_frame(frame)
 
         if display_cameras and not is_headless():
@@ -293,24 +289,18 @@ def control_loop(
             break
 
 
-def reset_environment(robot, events, reset_time_s):
+def reset_environment(robot, events, reset_time_s, fps):
     # TODO(rcadene): refactor warmup_record and reset_environment
-    # TODO(alibets): allow for teleop during reset
     if has_method(robot, "teleop_safety_stop"):
         robot.teleop_safety_stop()
 
-    timestamp = 0
-    start_vencod_t = time.perf_counter()
-
-    # Wait if necessary
-    with tqdm.tqdm(total=reset_time_s, desc="Waiting") as pbar:
-        while timestamp < reset_time_s:
-            time.sleep(1)
-            timestamp = time.perf_counter() - start_vencod_t
-            pbar.update(1)
-            if events["exit_early"]:
-                events["exit_early"] = False
-                break
+    control_loop(
+        robot=robot,
+        control_time_s=reset_time_s,
+        events=events,
+        fps=fps,
+        teleoperate=True,
+    )
 
 
 def stop_recording(robot, listener, display_cameras):
@@ -324,21 +314,21 @@ def stop_recording(robot, listener, display_cameras):
             cv2.destroyAllWindows()
 
 
-def sanity_check_dataset_name(repo_id, policy):
+def sanity_check_dataset_name(repo_id, policy_cfg):
     _, dataset_name = repo_id.split("/")
     # either repo_id doesnt start with "eval_" and there is no policy
     # or repo_id starts with "eval_" and there is a policy
 
     # Check if dataset_name starts with "eval_" but policy is missing
-    if dataset_name.startswith("eval_") and policy is None:
+    if dataset_name.startswith("eval_") and policy_cfg is None:
         raise ValueError(
-            f"Your dataset name begins with 'eval_' ({dataset_name}), but no policy is provided."
+            f"Your dataset name begins with 'eval_' ({dataset_name}), but no policy is provided ({policy_cfg.type})."
         )
 
     # Check if dataset_name does not start with "eval_" but policy is provided
-    if not dataset_name.startswith("eval_") and policy is not None:
+    if not dataset_name.startswith("eval_") and policy_cfg is not None:
         raise ValueError(
-            f"Your dataset name does not begin with 'eval_' ({dataset_name}), but a policy is provided ({policy})."
+            f"Your dataset name does not begin with 'eval_' ({dataset_name}), but a policy is provided ({policy_cfg.type})."
         )
 
 
