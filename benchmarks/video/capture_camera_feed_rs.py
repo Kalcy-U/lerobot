@@ -31,6 +31,13 @@ def display_and_save_video_stream(output_dir: Path, fps: int, width: int, height
         capture_dir.mkdir(parents=True, exist_ok=True)
 
     # 初始化RealSense相机
+    context = rs.context()
+    devices = context.query_devices()
+    if len(devices) == 0:
+        print("未检测到RealSense设备")
+        exit()
+    else:
+        print(f"检测到 {len(devices)} 个RealSense设备")
     pipeline = rs.pipeline()
     config = rs.config()
     config.enable_stream(rs.stream.color, width, height, rs.format.bgr8, fps)
@@ -55,21 +62,24 @@ def display_and_save_video_stream(output_dir: Path, fps: int, width: int, height
                 
                 # 显示深度图
                 cv2.imshow("Depth Stream", depth_colormap)
-                cv2.imwrite(str(capture_dir / f"depth_{frame_index:06d}.png"), depth_colormap)
+                
             
             if color_frame:
-           
+                
                 # 转换为numpy数组
                 frame = np.asanyarray(color_frame.get_data())
                 
                 cv2.imshow("Video Stream", frame)
+            
+            key = cv2.waitKey(1)
+            if key==ord(' '):
+                frame_index+=1
+                cv2.imwrite(str(capture_dir / f"depth_{frame_index:06d}.png"), depth_image)
                 cv2.imwrite(str(capture_dir / f"frame_{frame_index:06d}.png"), frame)
+                frame_index+=1
+          
             
-            frame_index += 1
-
-           
-            
-            if cv2.waitKey(1) & 0xFF == ord("q"):
+            if key == ord("q"):
                 break
 
     finally:
