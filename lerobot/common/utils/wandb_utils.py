@@ -40,6 +40,7 @@ def cfg_to_group(cfg: TrainPipelineConfig, return_list: bool = False) -> list[st
 
 def get_wandb_run_id_from_filesystem(log_dir: Path) -> str:
     # Get the WandB run ID.
+    log_dir=Path('/tmp')
     paths = glob(str(log_dir / "wandb/latest-run/run-*"))
     if len(paths) != 1:
         raise RuntimeError("Couldn't get the previous WandB run ID for run resumption.")
@@ -90,6 +91,7 @@ class WandBLogger:
             # TODO(rcadene): split train and eval, and run async eval with job_type="eval"
             job_type="train_eval",
             resume="must" if cfg.resume else None,
+            mode=self.cfg.mode if self.cfg.mode in ["online", "offline", "disabled"] else "online",
         )
         print(colored("Logs will be synced with wandb.", "blue", attrs=["bold"]))
         logging.info(f"Track this run --> {colored(wandb.run.get_url(), 'yellow', attrs=['bold'])}")
