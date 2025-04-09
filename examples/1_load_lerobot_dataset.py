@@ -48,26 +48,27 @@ pprint(repo_ids)
 # https://huggingface.co/datasets?other=LeRobot
 
 # Let's take this one for this example
-repo_id = "lerobot/aloha_mobile_cabinet"
-# We can have a look and fetch its metadata to know more about it:
+repo_id = "HuiYeGo/so100_test"
+# # We can have a look and fetch its metadata to know more about it:
 ds_meta = LeRobotDatasetMetadata(repo_id)
+from huggingface_hub import snapshot_download
+snapshot_download(repo_id=repo_id)
+# # By instantiating just this class, you can quickly access useful information about the content and the
+# # structure of the dataset without downloading the actual data yet (only metadata files — which are
+# # lightweight).
+# print(f"Total number of episodes: {ds_meta.total_episodes}")
+# print(f"Average number of frames per episode: {ds_meta.total_frames / ds_meta.total_episodes:.3f}")
+# print(f"Frames per second used during data collection: {ds_meta.fps}")
+# print(f"Robot type: {ds_meta.robot_type}")
+# print(f"keys to access images from cameras: {ds_meta.camera_keys=}\n")
 
-# By instantiating just this class, you can quickly access useful information about the content and the
-# structure of the dataset without downloading the actual data yet (only metadata files — which are
-# lightweight).
-print(f"Total number of episodes: {ds_meta.total_episodes}")
-print(f"Average number of frames per episode: {ds_meta.total_frames / ds_meta.total_episodes:.3f}")
-print(f"Frames per second used during data collection: {ds_meta.fps}")
-print(f"Robot type: {ds_meta.robot_type}")
-print(f"keys to access images from cameras: {ds_meta.camera_keys=}\n")
+# print("Tasks:")
+# print(ds_meta.tasks)
+# print("Features:")
+# pprint(ds_meta.features)
 
-print("Tasks:")
-print(ds_meta.tasks)
-print("Features:")
-pprint(ds_meta.features)
-
-# You can also get a short summary by simply printing the object:
-print(ds_meta)
+# # You can also get a short summary by simply printing the object:
+# print(ds_meta)
 
 # You can then load the actual dataset from the hub.
 # Either load any subset of episodes:
@@ -120,7 +121,7 @@ print(dataset.features[camera_key]["shape"])
 delta_timestamps = {
     # loads 4 images: 1 second before current frame, 500 ms before, 200 ms before, and current frame
     camera_key: [-1, -0.5, -0.20, 0],
-    # loads 8 state vectors: 1.5 seconds before, 1 second before, ... 200 ms, 100 ms, and current frame
+    # loads 6 state vectors: 1.5 seconds before, 1 second before, ... 200 ms, 100 ms, and current frame
     "observation.state": [-1.5, -1, -0.5, -0.20, -0.10, 0],
     # loads 64 action vectors: current frame, 1 frame in the future, 2 frames, ... 63 frames in the future
     "action": [t / dataset.fps for t in range(64)],
@@ -144,6 +145,6 @@ dataloader = torch.utils.data.DataLoader(
 
 for batch in dataloader:
     print(f"{batch[camera_key].shape=}")  # (32, 4, c, h, w)
-    print(f"{batch['observation.state'].shape=}")  # (32, 5, c)
+    print(f"{batch['observation.state'].shape=}")  # (32, 6, c)
     print(f"{batch['action'].shape=}")  # (32, 64, c)
     break
