@@ -36,7 +36,7 @@ from lerobot.common.policies.pretrained import PreTrainedPolicy
 from lerobot.common.robot_devices.robots.utils import Robot
 from lerobot.common.robot_devices.utils import busy_wait
 from lerobot.common.utils.utils import get_safe_torch_device, has_method
-
+from lerobot_kinematics import so100_IK,so100_FK
 
 def log_control_info(robot: Robot, dt_s, episode_index=None, frame_index=None, fps=None):
     log_items = []
@@ -196,8 +196,10 @@ def record_episode(
     policy,
     fps,
     single_task,
+    by_ik=False
 ):
-    control_loop(
+    if by_ik:
+        control_loop_by_ik(
         robot=robot,
         control_time_s=episode_time_s,
         display_cameras=display_cameras,
@@ -208,7 +210,100 @@ def record_episode(
         teleoperate=policy is None,
         single_task=single_task,
     )
+    else:
+        control_loop(
+            robot=robot,
+            control_time_s=episode_time_s,
+            display_cameras=display_cameras,
+            dataset=dataset,
+            events=events,
+            policy=policy,
+            fps=fps,
+            teleoperate=policy is None,
+            single_task=single_task,
+        )
 
+@safe_stop_image_writer
+def control_loop_by_ik(
+    robot,
+    control_time_s=None,
+    teleoperate=False,
+    display_cameras=False,
+    dataset: LeRobotDataset | None = None,
+    events=None,
+    policy: PreTrainedPolicy = None,
+    fps: int | None = None,
+    single_task: str | None = None,
+):
+    # TODO(rcadene): Add option to record logs
+    if not robot.is_connected:
+        robot.connect()
+
+    if events is None:
+        events = {"exit_early": False}
+
+    if control_time_s is None:
+        control_time_s = float("inf")
+
+    if teleoperate and policy is not None:
+        raise ValueError("When `teleoperate` is True, `policy` should be None.")
+
+    if dataset is not None and single_task is None:
+        raise ValueError("You need to provide a task as argument in `single_task`.")
+
+    if dataset is not None and fps is not None and dataset.fps != fps:
+        raise ValueError(f"The dataset fps should be equal to requested fps ({dataset['fps']} != {fps}).")
+
+    timestamp = 0
+    start_episode_t = time.perf_counter()
+    
+    
+    while timestamp < control_time_s:
+        start_loop_t = time.perf_counter()
+
+        if teleoperate:
+            observation, action = robot.teleop_step(record_data=True)
+        else:
+            observation = robot.capture_observation()
+
+            if policy is not None:
+                last_action=robot.capture_observation()['state']
+                pred_action = predict_action(
+                    observation, policy, get_safe_torch_device(policy.config.device), policy.config.use_amp
+                )
+                inv_q,succ = so100_IK(last_action, pred_action)
+                if succ:
+                    q_action=torch.from_numpy(inv_q)
+                else:
+                    q_action=last_action
+                    logging.warning(f"IK failed at gpos:{pred_action}")
+                
+                # Action can eventually be clipped using `max_relative_target`,
+                # so action actually sent is saved in the dataset.
+                action = robot.send_action(q_action)
+                action = {"action": action}
+
+        if dataset is not None:
+            frame = {**observation, **action, "task": single_task}
+            dataset.add_frame(frame)
+
+        if display_cameras and not is_headless():
+            image_keys = [key for key in observation if "image" in key]
+            for key in image_keys:
+                cv2.imshow(key, cv2.cvtColor(observation[key].numpy(), cv2.COLOR_RGB2BGR))
+            cv2.waitKey(1)
+
+        if fps is not None:
+            dt_s = time.perf_counter() - start_loop_t
+            busy_wait(1 / fps - dt_s)
+
+        dt_s = time.perf_counter() - start_loop_t
+        log_control_info(robot, dt_s, fps=fps)
+
+        timestamp = time.perf_counter() - start_episode_t
+        if events["exit_early"]:
+            events["exit_early"] = False
+            break
 
 @safe_stop_image_writer
 def control_loop(

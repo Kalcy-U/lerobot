@@ -173,3 +173,5 @@ dmypy.json
 cython_debug/
 
 lerobot-kinematics/
+
+**.out
