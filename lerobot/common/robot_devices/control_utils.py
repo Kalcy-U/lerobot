@@ -24,7 +24,7 @@ from contextlib import nullcontext
 from copy import copy
 from functools import cache
 
-import cv2
+# import cv2
 import torch
 from deepdiff import DeepDiff
 from termcolor import colored
