@@ -247,8 +247,8 @@ class PI0Policy(PreTrainedPolicy):
         self.unnormalize_outputs = Unnormalize(
             config.output_features, config.normalization_mapping, dataset_stats
         )
-
-        self.language_tokenizer = AutoTokenizer.from_pretrained("google/paligemma-3b-pt-224")
+        
+        self.language_tokenizer = AutoTokenizer.from_pretrained("google/paligemma-3b-pt-224",  mirror="hf-mirror.com")
         self.model = PI0FlowMatching(config)
 
         self.reset()
