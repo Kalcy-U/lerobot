@@ -1,3 +1,4 @@
 [submodule "lerobot-kinematics"]
 	path = lerobot-kinematics
 	url = https://github.com/Kalcy-U/lerobot-kinematics.git
+	branch=traj_plan
