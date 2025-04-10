@@ -21,6 +21,7 @@ from pathlib import Path
 
 from huggingface_hub.constants import SAFETENSORS_SINGLE_FILE
 from termcolor import colored
+import torch
 
 from lerobot.common.constants import PRETRAINED_MODEL_DIR
 from lerobot.configs.train import TrainPipelineConfig
@@ -114,9 +115,10 @@ class WandBLogger:
             raise ValueError(mode)
 
         for k, v in d.items():
-            if not isinstance(v, (int, float, str)):
+            
+            if not isinstance(v, (int, float, str,torch.Tensor)):
                 logging.warning(
-                    f'WandB logging of key "{k}" was ignored as its type is not handled by this wrapper.'
+                    f'WandB logging of key "{k}" of type {type(v)} was ignored as its type is not handled by this wrapper.'
                 )
                 continue
             self._wandb.log({f"{mode}/{k}": v}, step=step)

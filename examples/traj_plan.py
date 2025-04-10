@@ -1,34 +1,25 @@
 import os
+import threading
+import time
+import mujoco
+import mujoco.viewer
 import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
 from scipy.interpolate import CubicSpline, BSpline, splrep
 from scipy.signal import savgol_filter
 from scipy.ndimage import gaussian_filter1d
+import pandas as pd
+from lerobot_kinematics import lerobot_IK_5DOF, get_robot, so100_FK,so100_IK
 
-def read_actions_file(file_path):
-    """读取actions.txt文件并解析动作数据"""
-    actions = []
-    with open(file_path, 'r') as f:
-        lines = f.readlines()
-        
-        # 跳过头部注释行
-        start_idx = 0
-        for i, line in enumerate(lines):
-            if line.startswith('#'):
-                start_idx = i + 1
-            else:
-                break
-                
-        # 解析动作数据
-        for line in lines[start_idx:]:
-            parts = line.strip().split(',')
-            if len(parts) < 2:
-                continue
-            action_values = [float(val) for val in parts[1:]]
-            actions.append(action_values)
+
+def read_actions_file(file_path)->np.ndarray:
+    df = pd.read_parquet(file_path)
+    arr=np.stack(df['observation.state'].values)
     
-    return np.array(actions)
+    return arr
+    
+
 
 def cubic_spline_smoothing(sampled_times, sampled_actions, target_times):
     """使用三次样条插值平滑轨迹"""
@@ -83,6 +74,8 @@ def b_spline_smoothing(sampled_times, sampled_actions, target_times, degree=3):
 
 def plot_sampling_smoothing_comparison(actions, task_name, output_dir):
     """比较不同采样步长和平滑方法的效果"""
+    if type(actions)==list:
+        actions=np.stack(actions)
     action_dim = actions.shape[1]
     seq_length = actions.shape[0]
     
@@ -90,13 +83,13 @@ def plot_sampling_smoothing_comparison(actions, task_name, output_dir):
     time_steps = np.arange(seq_length)
     
     # 采样步长为5
-    sampling_stride = 5
+    sampling_stride = 10
     sampled_indices = np.arange(0, seq_length, sampling_stride)
     sampled_time_steps = time_steps[sampled_indices]
     sampled_actions = actions[sampled_indices]
     
     # 生成平滑轨迹的时间点
-    smooth_time_steps = np.linspace(0, seq_length-1, 200)
+    smooth_time_steps =  np.linspace(0, seq_length-1, 200)
     
     # 应用不同平滑算法
     cubic_spline_smooth = cubic_spline_smoothing(
@@ -216,40 +209,79 @@ def plot_sampling_smoothing_comparison(actions, task_name, output_dir):
     
     return output_file
 
-def main():
-    # 查找所有记录文件夹
-    base_dir = 'extracted_data'
-    output_dir = 'trajectory_smoothing'
-    os.makedirs(output_dir, exist_ok=True)
+
+def mujoco_follow_traj(actions):
+    np.set_printoptions(linewidth=200)
+    os.environ["MUJOCO_GL"] = "egl"
+
+    # Load Model
+    xml_path = "./lerobot-kinematics/examples/scene.xml"
+    mjmodel = mujoco.MjModel.from_xml_path(xml_path)
+    mjdata = mujoco.MjData(mjmodel)
+
+    lock = threading.Lock()
+
+    try:
+        with mujoco.viewer.launch_passive(mjmodel, mjdata) as viewer:
+            for qpos in actions:
+                mjdata.qpos[0:6]=qpos
+                
+                mujoco.mj_step(mjmodel, mjdata)
+                viewer.sync()
+                time.sleep(0.05)
+    except KeyboardInterrupt:
+        print("Simulation interrupted.")
+    finally:
+        viewer.close()
+
+def sampling_and_ik(sample_func,actions,sampling_stride):
+    # 采样步长为5
+    action_dim = actions.shape[1]
+    seq_length = actions.shape[0]
     
-    record_dirs = [d for d in os.listdir(base_dir) if d.startswith('record_') and os.path.isdir(os.path.join(base_dir, d))]
+    # 创建时间步序列
+    time_steps = np.arange(seq_length)
     
-    for record_dir in record_dirs:
-        # 提取任务名称
-        parts = record_dir.split('_', 2)
-        if len(parts) >= 3:
-            record_id = parts[1]
-            task_name = parts[2]
+    sampled_indices = np.arange(0, seq_length, sampling_stride)
+    sampled_time_steps = time_steps[sampled_indices]
+    sampled_actions = actions[sampled_indices]
+    
+    # 生成平滑轨迹的时间点
+    smooth_time_steps = np.linspace(0, seq_length-1, 400)
+    
+    # 应用不同平滑算法
+    smooth = sample_func(
+        sampled_time_steps, sampled_actions, smooth_time_steps)
+    print(smooth.shape)
+    print(smooth[0])
+    
+    # 轨迹中的每一个gpos IK
+    last_qpos = np.array([-0.703125,  -184.7461,     99.93164,   100.2832,     -2.1972656 ,  9.2514715])*np.pi/180
+    robot = get_robot('so100')
+    qpos_list = []
+    # print(lerobot_IK_5DOF(last_qpos[0:5],smooth[0][0:6], robot=robot))
+    for gpos in smooth:
+        inv_qpos, succ,_ = lerobot_IK_5DOF(last_qpos[0:5],gpos[0:6], robot=robot)
+        if succ:
+            inv_qpos = np.concatenate((inv_qpos,gpos[6:]*np.pi/180))
         else:
-            record_id = record_dir.split('_')[1]
-            task_name = f"记录 {record_id}"
+            inv_qpos = last_qpos
+        last_qpos=inv_qpos
+        print(inv_qpos)
+        qpos_list.append(inv_qpos)
         
-        # 读取动作文件
-        action_file = os.path.join(base_dir, record_dir, 'actions.txt')
-        if os.path.exists(action_file):
-            print(f"处理记录 {record_id}: {task_name}")
-            actions = read_actions_file(action_file)
-            
-            # 创建该记录的输出目录
-            record_output_dir = os.path.join(output_dir, f"record_{record_id}")
-            os.makedirs(record_output_dir, exist_ok=True)
-            
-            # 绘制并保存比较图
-            output_file = plot_sampling_smoothing_comparison(actions, task_name, record_output_dir)
-            print(f"平滑比较图已保存到: {output_file}")
-            print("-" * 50)
-        else:
-            print(f"找不到记录 {record_id} 的动作文件")
+    mujoco_follow_traj(qpos_list)
+    
+def main():
+    
+    parquet_file='/data/tyn/so100_grasp/data/chunk-000/episode_000001.parquet'
+    q_actions = read_actions_file(parquet_file)
+    print(q_actions[0])
+    g_actions = np.apply_along_axis(so100_FK, 1, q_actions) 
+    print(g_actions[0])
+    # plot_sampling_smoothing_comparison(g_actions, parquet_file, '.output')
+    sampling_and_ik(cubic_spline_smoothing,g_actions,20)
+
 
 if __name__ == "__main__":
     main()
