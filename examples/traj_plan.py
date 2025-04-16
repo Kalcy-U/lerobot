@@ -6,7 +6,7 @@ import mujoco.viewer
 import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
-from scipy.interpolate import CubicSpline, BSpline, splrep
+from scipy.interpolate import CubicSpline, BSpline, splrep,interp1d
 from scipy.signal import savgol_filter
 from scipy.ndimage import gaussian_filter1d
 import pandas as pd
@@ -83,7 +83,7 @@ def plot_sampling_smoothing_comparison(actions, task_name, output_dir):
     time_steps = np.arange(seq_length)
     
     # 采样步长为5
-    sampling_stride = 10
+    sampling_stride = 16
     sampled_indices = np.arange(0, seq_length, sampling_stride)
     sampled_time_steps = time_steps[sampled_indices]
     sampled_actions = actions[sampled_indices]
@@ -137,22 +137,22 @@ def plot_sampling_smoothing_comparison(actions, task_name, output_dir):
     plt.grid(True)
     plt.legend(loc='best')
     
-    plt.subplot(3, 2, 4)
-    for i in range(action_dim):
-        plt.plot(time_steps, savgol_smooth[:, i], '-', label=f'dimension {i}')
-    plt.title('Savitzky-Golay filter')
-    plt.xlabel('step')
-    plt.ylabel('action_value')
-    plt.grid(True)
-    plt.legend(loc='best')
+    # plt.subplot(3, 2, 4)
+    # for i in range(action_dim):
+    #     plt.plot(time_steps, savgol_smooth[:, i], '-', label=f'dimension {i}')
+    # plt.title('Savitzky-Golay filter')
+    # plt.xlabel('step')
+    # plt.ylabel('action_value')
+    # plt.grid(True)
+    # plt.legend(loc='best')
     
-    plt.subplot(3, 2, 5)
-    for i in range(action_dim):
-        plt.plot(time_steps, gaussian_smooth[:, i], '-', label=f'dimension {i}')
-    plt.title('Gaussian filter')
-    plt.xlabel('step')
-    plt.ylabel('action_value')
-    plt.grid(True)
+    # plt.subplot(3, 2, 5)
+    # for i in range(action_dim):
+    #     plt.plot(time_steps, gaussian_smooth[:, i], '-', label=f'dimension {i}')
+    # plt.title('Gaussian filter')
+    # plt.xlabel('step')
+    # plt.ylabel('action_value')
+    # plt.grid(True)
     plt.legend(loc='best')
     
     plt.subplot(3, 2, 6)
@@ -191,8 +191,8 @@ def plot_sampling_smoothing_comparison(actions, task_name, output_dir):
         plt.plot(time_steps, actions[:, i], 'k-', alpha=0.5, label='original')
         plt.plot(sampled_time_steps, sampled_actions[:, i], 'ko', alpha=0.5, label='sampling')
         plt.plot(smooth_time_steps, cubic_spline_smooth[:, i], 'r-', label='three_cubic_spline')
-        plt.plot(time_steps, savgol_smooth[:, i], 'g-', label='Savitzky-Golay filter')
-        plt.plot(time_steps, gaussian_smooth[:, i], 'b-', label='Gaussian filter')
+        # plt.plot(time_steps, savgol_smooth[:, i], 'g-', label='Savitzky-Golay filter')
+        # plt.plot(time_steps, gaussian_smooth[:, i], 'b-', label='Gaussian filter')
         plt.plot(smooth_time_steps, b_spline_smooth[:, i], 'm-', label='B-spline')
         plt.title(f'dimension {i} - traj_plan_algorithm_comparison')
         plt.xlabel('step')
@@ -209,6 +209,29 @@ def plot_sampling_smoothing_comparison(actions, task_name, output_dir):
     
     return output_file
 
+
+def linear_interpolation(sampled_times, sampled_actions, target_times):
+    """使用线性插值计算轨迹
+    
+    参数:
+        sampled_times: 采样时间点 (1D array)
+        sampled_actions: 采样点处的动作/值 (2D array, shape=[n_samples, n_dims])
+        target_times: 目标时间点 (1D array)
+        
+    返回:
+        interpolated_actions: 插值后的动作/值 (2D array, shape=[n_target_times, n_dims])
+    """
+    interpolated_actions = np.zeros((len(target_times), sampled_actions.shape[1]))
+    
+  
+    interp_func = interp1d(
+        sampled_times, 
+        sampled_actions, 
+        axis=0
+    )
+    interpolated_actions = interp_func(target_times)
+    
+    return interpolated_actions
 
 def mujoco_follow_traj(actions):
     np.set_printoptions(linewidth=200)
@@ -228,7 +251,7 @@ def mujoco_follow_traj(actions):
                 
                 mujoco.mj_step(mjmodel, mjdata)
                 viewer.sync()
-                time.sleep(0.05)
+                time.sleep(0.03)
     except KeyboardInterrupt:
         print("Simulation interrupted.")
     finally:
@@ -271,7 +294,8 @@ def sampling_and_ik(sample_func,actions,sampling_stride):
         qpos_list.append(inv_qpos)
         
     mujoco_follow_traj(qpos_list)
-    
+
+
 def main():
     
     parquet_file='/data/tyn/so100_grasp/data/chunk-000/episode_000001.parquet'
@@ -279,8 +303,8 @@ def main():
     print(q_actions[0])
     g_actions = np.apply_along_axis(so100_FK, 1, q_actions) 
     print(g_actions[0])
-    # plot_sampling_smoothing_comparison(g_actions, parquet_file, '.output')
-    sampling_and_ik(cubic_spline_smoothing,g_actions,20)
+    plot_sampling_smoothing_comparison(g_actions, parquet_file, 'outputs/images')
+    # sampling_and_ik(cubic_spline_smoothing,g_actions,20)
 
 
 if __name__ == "__main__":

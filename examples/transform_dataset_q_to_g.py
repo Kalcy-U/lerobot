@@ -29,7 +29,7 @@ np.set_printoptions(linewidth=200)
 robot = get_robot('so100')
 
 base_path = '/data/tyn/so100_grasp/'
-output_path = f'/data/tyn/so100_grasp_cartesian_{step}/'
+output_path = f'/data/tyn/so100_grasp_cartesian_{step}_cam1/'
 
 # 创建输出目录
 os.makedirs(output_path, exist_ok=True)
@@ -91,6 +91,7 @@ for episode in episodes:
                 print("原始qpos:", [f"{x:.4f}" for x in o_qpos[0:5]])
                 if len(error_file_list)==0 or  error_file_list[-1]!=parquet_path:
                     error_file_list.append(parquet_path)
+            # 
             o_gpos_list.append(gpos)
             a_gpos_list.append(so100_FK(a_qpos))
             
