@@ -140,6 +140,7 @@ def make_policy(
     cfg.input_features = {key: ft for key, ft in features.items() if key not in cfg.output_features}
     kwargs["config"] = cfg
 
+    cfg.pretrained_path = "/home/fdse/.cache/modelscope/hub/models/lerobot/pi0"
     if cfg.pretrained_path:
         # Load a pretrained policy and override the config if needed (for example, if there are inference-time
         # hyperparameters that we want to vary).

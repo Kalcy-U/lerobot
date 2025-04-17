@@ -136,6 +136,7 @@ def train(cfg: TrainPipelineConfig):
         eval_env = make_env(cfg.env, n_envs=cfg.eval.batch_size, use_async_envs=cfg.eval.use_async_envs)
 
     logging.info("Creating policy")
+    
     policy = make_policy(
         cfg=cfg.policy,
         ds_meta=dataset.meta,
