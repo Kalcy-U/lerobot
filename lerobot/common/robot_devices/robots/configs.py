@@ -443,7 +443,7 @@ class So100RobotConfig(ManipulatorRobotConfig):
     leader_arms: dict[str, MotorsBusConfig] = field(
         default_factory=lambda: {
             "main": FeetechMotorsBusConfig(
-                port="COM1",
+                port="COM4",
                 motors={
                     # name: (index, model)
                     "shoulder_pan": [6, "sts3215"],
@@ -479,8 +479,9 @@ class So100RobotConfig(ManipulatorRobotConfig):
             "on_hand": OpenCVCameraConfig(
                 camera_index=0,
                 fps=30,
-                width=640,
-                height=480,
+                width=1280,
+                height=720,
+                rotation=90
             ),
             # "phone": OpenCVCameraConfig(
             #     camera_index=1,
