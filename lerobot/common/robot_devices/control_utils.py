@@ -36,6 +36,7 @@ from lerobot.common.policies.pretrained import PreTrainedPolicy
 from lerobot.common.robot_devices.robots.utils import Robot
 from lerobot.common.robot_devices.utils import busy_wait
 from lerobot.common.utils.utils import get_safe_torch_device, has_method
+import torch.nn.functional as F
 from lerobot_kinematics import so100_IK,so100_FK
 
 def log_control_info(robot: Robot, dt_s, episode_index=None, frame_index=None, fps=None):
@@ -214,7 +215,7 @@ def record_episode(
         control_loop(
             robot=robot,
             control_time_s=episode_time_s,
-            display_cameras=display_cameras,
+            display_data=display_data,
             dataset=dataset,
             events=events,
             policy=policy,
