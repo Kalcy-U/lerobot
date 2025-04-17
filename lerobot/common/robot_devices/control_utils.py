@@ -197,7 +197,8 @@ def record_episode(
     policy,
     fps,
     single_task,
-    by_ik=False
+    by_ik=False,
+    router=None
 ):
     if by_ik:
         control_loop_by_ik(
@@ -210,6 +211,7 @@ def record_episode(
         fps=fps,
         teleoperate=policy is None,
         single_task=single_task,
+        router=router
     )
     else:
         control_loop(
@@ -222,6 +224,7 @@ def record_episode(
             fps=fps,
             teleoperate=policy is None,
             single_task=single_task,
+            router=router
         )
 
 @safe_stop_image_writer
@@ -317,7 +320,7 @@ def control_loop(
     policy: PreTrainedPolicy = None,
     fps: int | None = None,
     single_task: str | None = None,
-):
+    router:str | None = None):
     # TODO(rcadene): Add option to record logs
     if not robot.is_connected:
         robot.connect()
@@ -337,6 +340,12 @@ def control_loop(
     if dataset is not None and fps is not None and dataset.fps != fps:
         raise ValueError(f"The dataset fps should be equal to requested fps ({dataset['fps']} != {fps}).")
 
+    if router is not None:
+        from lerobot.scripts.policy_websocket_client import PolicyWebSocketClient
+        client = PolicyWebSocketClient(router,80)
+    else :
+        client = None
+
     timestamp = 0
     start_episode_t = time.perf_counter()
     while timestamp < control_time_s:
@@ -348,9 +357,13 @@ def control_loop(
             observation = robot.capture_observation()
 
             if policy is not None:
-                pred_action = predict_action(
-                    observation, policy, get_safe_torch_device(policy.config.device), policy.config.use_amp
-                )
+                if client is None:
+                    pred_action = predict_action(
+                        observation, policy, get_safe_torch_device(policy.config.device), policy.config.use_amp
+                    )
+                else:
+                    pred_action = client.predict_action(observation)
+
                 # Action can eventually be clipped using `max_relative_target`,
                 # so action actually sent is saved in the dataset.
                 action = robot.send_action(pred_action)

@@ -305,7 +305,8 @@ def record(
             policy=policy,
             fps=cfg.fps,
             single_task=cfg.single_task,
-            by_ik=cfg.by_gpos
+            by_ik=cfg.by_gpos,
+            router=cfg.policy_server#'ws://10.176.44.2:8001'
         )
 
         # Execute a few seconds without recording to give time to manually reset the environment
