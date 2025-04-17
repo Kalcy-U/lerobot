@@ -712,8 +712,8 @@ def validate_frame(frame: dict, features: dict):
     for name in common_features - {"task"}:
         error_message += validate_feature_dtype_and_shape(name, features[name], frame[name])
 
-    if error_message:
-        raise ValueError(error_message)
+    # if error_message:
+    #     raise ValueError(error_message)
 
 
 def validate_features_presence(

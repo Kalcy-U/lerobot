@@ -26,7 +26,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
-
+import cv2
 from lerobot.common.robot_devices.cameras.utils import make_cameras_from_configs
 from lerobot.common.robot_devices.motors.utils import MotorsBus, make_motors_buses_from_configs
 from lerobot.common.robot_devices.robots.configs import ManipulatorRobotConfig
@@ -475,6 +475,8 @@ class ManipulatorRobot:
             follower_goal_pos[name] = goal_pos
 
             goal_pos = goal_pos.numpy().astype(np.float32)
+            if goal_pos[2]<-10 :
+                goal_pos[2]+=360
             self.follower_arms[name].write("Goal_Position", goal_pos)
             self.logs[f"write_follower_{name}_goal_pos_dt_s"] = time.perf_counter() - before_fwrite_t
 
@@ -550,6 +552,11 @@ class ManipulatorRobot:
         for name in self.cameras:
             before_camread_t = time.perf_counter()
             images[name] = self.cameras[name].async_read()
+            
+            images[name] = cv2.resize(images[name], (360, 640), interpolation=cv2.INTER_AREA)
+            # cv2.imshow("img",cv2.cvtColor(images[name], cv2.COLOR_BGR2RGB))
+            # cv2.waitKey(0)
+            # cv2.destroyAllWindows()
             images[name] = torch.from_numpy(images[name])
             self.logs[f"read_camera_{name}_dt_s"] = self.cameras[name].logs["delta_timestamp_s"]
             self.logs[f"async_read_camera_{name}_dt_s"] = time.perf_counter() - before_camread_t

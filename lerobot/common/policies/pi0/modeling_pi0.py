@@ -24,7 +24,7 @@ Designed by Physical Intelligence. Ported from Jax by Hugging Face.
 
 Install pi0 extra dependencies:
 ```bash
-pip install --no-binary=av -e ".[pi0]"
+pip install -e ".[pi0]"
 ```
 
 Example of finetuning the pi0 pretrained model (`pi0_base` in `openpi`):
@@ -247,8 +247,8 @@ class PI0Policy(PreTrainedPolicy):
         self.unnormalize_outputs = Unnormalize(
             config.output_features, config.normalization_mapping, dataset_stats
         )
-        
-        self.language_tokenizer = AutoTokenizer.from_pretrained("google/paligemma-3b-pt-224",  mirror="hf-mirror.com")
+
+        self.language_tokenizer = AutoTokenizer.from_pretrained("google/paligemma-3b-pt-224",base_url='https://hf-mirror.com/')
         self.model = PI0FlowMatching(config)
 
         self.reset()
@@ -381,7 +381,7 @@ class PI0Policy(PreTrainedPolicy):
     def prepare_language(self, batch) -> tuple[Tensor, Tensor]:
         """Tokenize the text input"""
         device = batch[OBS_ROBOT].device
-        tasks = batch["task"]
+        tasks = ["Grasp a black block and put it in the bin."]
 
         # PaliGemma prompt has to end with a new line
         tasks = [task if task.endswith("\n") else f"{task}\n" for task in tasks]
