@@ -163,7 +163,7 @@ def rdp_smoothing_enhanced(actions, precision=0.05, curvature_threshold=0.1, poi
     
     return enhanced_reduced_actions, enhanced_masks
 
-def plot_rdp_results(actions, task_name, output_dir, precision=0.05,curvature_threshold=0.1,points_to_add=2):
+def plot_rdp_results(actions, task_name, output_dir, precision=0.05):
     """可视化RDP结果"""
     if isinstance(actions, list):
         actions = np.stack(actions)
@@ -171,7 +171,7 @@ def plot_rdp_results(actions, task_name, output_dir, precision=0.05,curvature_th
     
     
     # 使用增强版的RDP算法
-    reduced_actions, masks = rdp_smoothing_enhanced(actions, precision = precision ,curvature_threshold=curvature_threshold,points_to_add=points_to_add)
+    reduced_actions, masks = rdp_smoothing(actions, precision = precision)
     seq_length = len(actions)
     time_steps = np.arange(seq_length)
     smooth_time_steps = np.linspace(0, seq_length-1, seq_length)
@@ -180,13 +180,10 @@ def plot_rdp_results(actions, task_name, output_dir, precision=0.05,curvature_th
     # 对每个维度应用三次样条插值
     for dim in range(actions.shape[1]):
         reduced_points = reduced_actions[dim]
-        # 用RDP简化后的点拟合三次样条
         x=np.where(masks[:,dim])[0]
         cs = CubicSpline(x, reduced_points[:, 1],bc_type=((1,0),(1,0)))
-        # 在全部时间点上计算样条值
         cubic_smoothed[:, dim] = cs(smooth_time_steps)
         
-    # 创建输出目录
     os.makedirs(output_dir, exist_ok=True)
     
     # 绘制所有维度的综合图
@@ -226,16 +223,17 @@ def plot_rdp_results(actions, task_name, output_dir, precision=0.05,curvature_th
     plt.savefig(output_file, dpi=300)
     plt.close()
     
+    
     # 为每个维度生成单独的对比图
     for i in range(actions.shape[1]):
         plt.figure(figsize=(15, 8))
         reduced_points = reduced_actions[i]
         
         plt.plot(time_steps, actions[:, i], 'b-', label='Original', alpha=0.6)
-        plt.plot(reduced_points[:, 0], reduced_points[:, 1], 'ro', 
+        plt.plot(reduced_points[:, 0], reduced_points[:, 1], 'go-', 
                 label=f'RDP (points: {len(reduced_points)})')
         plt.plot(smooth_time_steps, cubic_smoothed[:, i], 'r-', label='three_cubic_spline')
-        
+
         plt.title(f'Dimension {i} - RDP Simplification')
         plt.xlabel('step')
         plt.ylabel('action_value')
@@ -409,6 +407,18 @@ def allocate_sampled_t(sampled_a: np.ndarray, avg_speed: float, min_range: float
         sampled_t.append(int(np.round(last_t)))
     
     return np.array(sampled_t)
+
+def smoothed_linear_interpolation(key_points,speed):
+    sampled_t=allocate_sampled_t(key_points,speed,1)
+    target_t = np.linspace(0, sampled_t[-1]-1, sampled_t[-1])
+    print(len(sampled_t))
+    print(len(key_points))
+    print(sampled_t[-1])
+    result = linear_interpolation(sampled_t, key_points, target_t)
+   
+    smooth = gaussian_smoothing(result)
+    return smooth
+
 def test_rdp():
     """Test RDP Algorithm"""
     parquet_file='/data/tyn/so100_grasp/data/chunk-000/episode_000001.parquet'
@@ -423,16 +433,9 @@ def test_rdp():
     key_points = g_actions[mask]
     
     speed= compute_average_speed(g_actions)
-    print(speed)
-    sampled_t=allocate_sampled_t(key_points,speed,1)
-    target_t = np.linspace(0, sampled_t[-1]-1, sampled_t[-1])
-    print(len(sampled_t))
-    print(len(key_points))
-    print(sampled_t[-1])
-    result = linear_interpolation(sampled_t, key_points, target_t)
-   
-    smooth = gaussian_smoothing(result)
-    print(len(smooth))
+    print(speed) # 0.00181
+    smooth=smoothed_linear_interpolation(key_points,speed)
+
     
     qpos_list=[]
     robot = get_robot()
@@ -449,14 +452,12 @@ def test_rdp():
         
     mujoco_follow_traj(qpos_list)
     # print(list)
-    # # 使用增强版的RDP算法，自动添加高曲率区域的采样点
-    # plot_rdp_results(
-    #     g_actions, 
-    #     parquet_file, 
-    #     '.output',
-    #     precision=0.03, 
-    #     curvature_threshold=0.3, 
-    #     points_to_add=2)
+    
+    plot_rdp_results(
+        g_actions, 
+        parquet_file, 
+        '.output',
+        precision=0.03)
     
     # # 对比原始RDP和增强RDP的结果
     # plot_rdp_comparison(
